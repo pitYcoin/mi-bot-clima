@@ -1,154 +1,167 @@
+import logging
 import os
 import requests
-import threading
-import logging
-from flask import Flask
+import asyncio
+from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# --- 1. CONFIGURACIÓN INICIAL ---
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
-app = Flask(__name__)
+# --- CONFIGURACIÓN ---
+# ⚠️ IMPORTANTE: Las claves ahora se cargan desde variables de entorno para mayor seguridad
+# Asegúrate de que estas variables de entorno estén configuradas en Render
+TOKEN_TELEGRAM = os.getenv("TOKEN_TELEGRAM")
+WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY") # Usamos la clave para weatherapi.com
 
-# Configuración del servidor para Render
-@app.route('/')
-def home():
-    return "Sentinel Potrerillos: SISTEMA ACTIVO"
+LAT, LON = -32.95, -69.18  # Coordenadas exactas Potrerillos, Mendoza
 
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+# Configuración de logs para monitoreo (te avisará en la consola si algo falla)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# --- 2. LÓGICA DE INTELIGENCIA METEOROLÓGICA ---
-def obtener_analisis_montaña():
-    API_KEY = os.environ.get("API_KEY_WEATHER")
-    # Coordenadas exactas: Potrerillos, Mendoza
-    URL = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q=-32.95,-69.18&lang=es"
+# --- CONFIGURACIÓN DE FLASK (SERVIDOR WEB) ---
+flask_app = Flask(__name__)
+
+@flask_app.route('/') # Esta ruta es para que Render sepa que el servicio está vivo
+def index():
+    return "Bot de Emergencias Potrerillos: ACTIVO 24/7"
+ 
+@flask_app.route(f'/{TOKEN_TELEGRAM}', methods=['POST'])
+async def telegram_webhook():
+    """Esta ruta recibe las actualizaciones de Telegram y las procesa."""
+    update_data = request.get_json(force=True)
+    await app.process_update(Update.de_json(update_data, app.bot))
+    return "ok", 200
+
+# --- FUNCIONES DE DATOS ---
+
+def obtener_clima():
+    """Consulta la API de OpenWeather para datos de montaña."""
+    # Construimos la URL de consulta
+    url = f"https://api.openweathermap.org/data/2.5/weather?lat={LAT}&lon={LON}&appid={API_KEY_WEATHER}&units=metric&lang=es"
     
     try:
-        r = requests.get(URL).json()
-        temp = r['current']['temp_c']
-        viento = r['current']['wind_kph']
-        rafagas = r['current']['gust_kph']
-        humedad = r['current']['humidity']
-        presion = r['current']['pressure_mb']
-        condicion = r['current']['condition']['text']
+        response = requests.get(url).json()
+        
+        # Verificamos si la API respondió correctamente (código 200)
+        if response.get("cod") != 200:
+            logging.error(f"Error API: {response.get('message')}")
+            return None
 
-        # Protocolo de Seguridad (Nivel Especialista)
-        estado = "🟢 NORMAL"
-        consejo = "Condiciones estables. Mantenga siempre agua y abrigo en el vehículo."
-        color_emoji = "🏔️"
+        temp = response['main']['temp']
+        viento_vel = response['wind']['speed'] * 3.6  # Convertir m/s a km/h
+        desc = response['weather'][0]['description']
+        
+        # La API gratuita a veces no trae ráfagas (gusts), usamos speed como base si no hay ráfagas
+        rafagas = response['wind'].get('gust', response['wind']['speed']) * 3.6
+        
+        return {"temp": temp, "viento": viento_vel, "rafagas": rafagas, "desc": desc}
+    except Exception as e:
+        logging.error(f"Error crítico obteniendo clima: {e}")
+        return None
 
-        # Detección de Viento Zonda (Baja humedad + ráfagas altas)
-        if rafagas > 55 and humedad < 25:
-            estado = "🔴 ALERTA SEVERA: VIENTO ZONDA"
-            consejo = "PROHIBIDO ENCENDER FUEGO. Asegure techos. Peligro de caída de árboles y cables."
-            color_emoji = "🔥"
-        # Detección de Tormentas de Verano (Crecida de arroyos)
-        elif "lluvia" in condicion.lower() or "tormenta" in condicion.lower():
-            estado = "🟠 ALERTA: CRECIDA DE ARROYOS"
-            consejo = "No cruce badenes en El Salto o Valle del Sol. Rayos detectados en la zona."
-            color_emoji = "⛈️"
-        # Viento fuerte de montaña
-        elif rafagas > 40:
-            estado = "🟡 PRECAUCIÓN: RÁFAGAS"
-            consejo = "Viento fuerte en la zona del Dique. Reduzca la velocidad al conducir."
-            color_emoji = "💨"
+# --- COMANDOS DEL BOT ---
 
-        reporte = (
-            f"{color_emoji} **MONITOR SENTINEL POTRERILLOS**\n"
-            f"----------------------------------------\n"
-            f"🌡️ **Temperatura:** {temp}°C\n"
-            f"☁️ **Cielo:** {condicion.capitalize()}\n"
-            f"🌬️ **Viento:** {viento} km/h (Ráfagas: {rafagas} km/h)\n"
-            f"💧 **Humedad:** {humedad}% | 📉 **Presión:** {presion} hPa\n\n"
-            f"🚨 **ESTADO:** {estado}\n"
-            f"📝 **PROTOCOLO:** {consejo}\n"
-            f"----------------------------------------\n"
-            f"📍 *Zonas: El Salto, Las Carditas, Valle del Sol, Dique.*"
-        )
-        return reporte
-    except:
-        return "❌ Error: Sensores fuera de línea. Consulte al 911."
-
-# --- 3. FUNCIONES DEL BOT ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Teclado Principal (UX Optimizada)
-    botones = [
-        ['🏔️ ESTADO DE MONTAÑA'],
-        ['🚨 EMERGENCIAS', '📝 CONSEJOS ZONDA'],
-        ['☕ APOYAR PROYECTO (Propina)']
-    ]
+    """Bienvenida con botones de acceso rápido."""
+    user = update.effective_user
+    # Definimos el teclado de botones
+    botones = [['🏔️ Estado Actual', '🚨 Emergencias'], ['⚠️ Alertas SMN', '📝 Consejos Zonda']]
     reply_markup = ReplyKeyboardMarkup(botones, resize_keyboard=True)
     
-    await update.message.reply_text(
-        f"🛡️ **Sentinel Potrerillos v2.0**\n\n"
-        f"Hola {update.effective_user.first_name}, soy tu sistema de Alerta Temprana.\n"
-        f"Monitoreo constante de condiciones climáticas y seguridad vial.",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
+    mensaje_bienvenida = (
+        f"Hola {user.first_name}. Soy el **Monitor de Emergencias Potrerillos**.\n\n"
+        "Mi misión es brindarte información crítica sobre el clima en El Salto, "
+        "Las Carditas, Valle del Sol y el Dique.\n"
+        "Utiliza los botones inferiores para obtener reportes en tiempo real."
     )
+    await update.message.reply_text(mensaje_bienvenida, reply_markup=reply_markup, parse_mode='Markdown')
 
-async def manejar_mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message.text
+async def reporte_clima(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enviá el reporte estructurado según tu protocolo."""
+    datos = obtener_clima()
+    if not datos:
+        await update.message.reply_text("❌ Error al conectar con los sensores meteorológicos (Verifica tu API Key).")
+        return
 
-    if msg == '🏔️ ESTADO DE MONTAÑA':
-        await update.message.reply_text(obtener_analisis_montaña(), parse_mode='Markdown')
+    # Lógica de Alerta basada en el viento (Protocolo Zonda)
+    alerta = "NO"
+    if datos['rafagas'] > 50: # Corregido el símbolo >
+        alerta = "SÍ - VIENTO FUERTE / POSIBLE ZONDA"
+    
+    reporte = (
+        "📊 **REPORTE DE ESTADO - POTRERILLOS**\n"
+        "------------------------------------\n"
+        f"🌡️ **Temperatura:** {datos['temp']}°C\n"
+        f"🌬️ **Viento:** {datos['viento']:.1f} km/h\n"
+        f"💨 **Ráfagas:** {datos['rafagas']:.1f} km/h\n"
+        f"☁️ **Condición:** {datos['desc'].capitalize()}\n\n"
+        f"⚠️ **Alerta Activa:** {alerta}\n"
+        "------------------------------------\n"
+        "📍 **Zonas Monitoreadas:** El Salto, Valle del Sol, Las Carditas.\n\n"
+        "✅ **Acción:** Asegurar objetos sueltos y evitar fuego."
+    )
+    await update.message.reply_text(reporte, parse_mode='Markdown')
 
-    elif msg == '🚨 EMERGENCIAS':
-        emergencias = (
-            "🚨 **NÚMEROS DE VIDA O MUERTE**\n\n"
-            "📞 **Emergencias:** 911\n"
-            "📞 **Defensa Civil:** 103\n"
-            "📞 **Patrulla de Rescate:** (0261) 420-1313\n"
-            "📞 **Centro de Salud Potrerillos:** 02624 48-2003\n\n"
-            "📍 *Ubicación del Centro de Salud: Av. Los Cóndores s/n.*"
-        )
-        await update.message.reply_text(emergencias, parse_mode='Markdown')
+async def emergencias(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Contactos de emergencia."""
+    msg = (
+        "🚨 **CONTACTOS DE EMERGENCIA**\n\n"
+        "📞 **Emergencias:** 911\n"
+        "📞 **Defensa Civil Mendoza:** 103\n"
+        "📞 **Centro de Salud Potrerillos:** 02624 48-2003\n\n"
+        "⚠️ *Si hay crecida de arroyos, no intentes cruzar badenes.*"
+    )
+    await update.message.reply_text(msg, parse_mode='Markdown')
 
-    elif msg == '📝 CONSEJOS ZONDA':
-        consejos = (
-            "🌬️ **MANUAL DE SUPERVIVENCIA ZONDA**\n"
-            "1. **FUEGO:** Cero tolerancia. Una chispa quema todo el cerro.\n"
-            "2. **HOGAR:** Cierre herméticamente. Use trapos húmedos en rendijas.\n"
-            "3. **TRANSPORTE:** Si hay nubes de polvo, deténgase lejos de árboles.\n"
-            "4. **SALUD:** El aire seco irrita. Use gotas oculares e hidrátese."
-        )
-        await update.message.reply_text(consejos, parse_mode='Markdown')
+async def consejos_zonda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = (
+        "📝 **CONSEJOS ANTE VIENTO ZONDA**\n"
+        "1. Hidratarse permanentemente.\n"
+        "2. Cerrar y asegurar puertas y ventanas.\n"
+        "3. **PROHIBIDO** encender fuego al aire libre.\n"
+        "4. Evitar transitar bajo árboles o cables eléctricos."
+    )
+    await update.message.reply_text(msg, parse_mode='Markdown')
 
-    elif msg == '☕ APOYAR PROYECTO (Propina)':
-        # Configuración de Wallet (Cambia los datos por los tuyos)
-        mensaje_pago = (
-            "🙏 **SOPORTE DE LA COMUNIDAD**\n\n"
-            "Este bot es gratuito y se mantiene con servidores en la nube. "
-            "Si te ha sido de utilidad para tu seguridad o viaje, puedes invitarme un café:\n\n"
-            "💎 **UQCWySkNydeU3Sa_TeyeOLtaXUB5hQHh3oJ3GUR24knJjCIu**\n"
-        
-             "¡Gracias por ayudar a mantener Potrerillos seguro!"
-        )
-        # Botón de acceso rápido a tu Wallet
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💎 Enviar vía @Wallet", url="https://t.me/wallet")]
-        ])
-        await update.message.reply_text(mensaje_pago, reply_markup=keyboard, parse_mode='Markdown')
+# --- MANEJADOR DE MENSAJES DE TEXTO (BOTONES) ---
 
-# --- 4. LANZAMIENTO MAESTRO ---
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == '🏔️ Estado Actual':
+        await reporte_clima(update, context)
+    elif text == '🚨 Emergencias':
+        await emergencias(update, context)
+    elif text == '📝 Consejos Zonda':
+        await consejos_zonda(update, context)
+    elif text == '⚠️ Alertas SMN':
+        await update.message.reply_text("🔗 [Consulta Alertas Oficiales SMN aquí](https://www.smn.gob.ar/alertas)", parse_mode='Markdown')
+
+# --- INICIO DEL PROGRAMA ---
+
 if __name__ == '__main__':
-    # Lanzar servidor Keep-Alive (Flask)
-    threading.Thread(target=run_flask, daemon=True).start()
-    
-    # Obtener Token desde Render
-    TOKEN_SECRET = os.environ.get("TOKEN_TELEGRAM")
-    
-    if not TOKEN_SECRET:
-        print("FATAL ERROR: No se detectó TOKEN_TELEGRAM en las variables de entorno.")
-    else:
-        # Construir Aplicación
-        application = Application.builder().token(TOKEN_SECRET).build()
-        
-        # Handlers
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, manejar_mensajes))
-        
-        print("✅ SENTINEL POTRERILLOS INICIADO CON ÉXITO")
-        application.run_polling()
+    # 1. Verificación de seguridad antes de arrancar
+    if not all([TOKEN_TELEGRAM, API_KEY_WEATHER, WEBHOOK_URL]):
+        print("❌ ERROR CRÍTICO: Asegúrate de que las variables de entorno TOKEN_TELEGRAM, API_KEY_WEATHER y WEBHOOK_URL están configuradas.")
+        exit(1)
+
+    # 2. Crear la aplicación del bot
+    app = Application.builder().token(TOKEN_TELEGRAM).build()
+
+    # 3. Añadir comandos y manejadores de mensajes
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("clima", reporte_clima))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # 4. Configurar el webhook de forma asíncrona
+    async def setup():
+        print(f"Configurando webhook en la URL: {WEBHOOK_URL}/{TOKEN_TELEGRAM}")
+        await app.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN_TELEGRAM}")
+
+    # Ejecutamos la configuración del webhook
+    asyncio.run(setup())
+
+    # 5. Iniciar el servidor Flask
+    # Render asigna un puerto automáticamente en la variable de entorno 'PORT'
+    port = int(os.environ.get("PORT", 8080))
+    print(f"🏔️ Servidor Flask iniciado en el puerto {port}. El bot está escuchando vía webhook.")
+    flask_app.run(host='0.0.0.0', port=port)
+
