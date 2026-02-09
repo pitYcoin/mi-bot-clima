@@ -10,7 +10,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # ⚠️ IMPORTANTE: Las claves ahora se cargan desde variables de entorno para mayor seguridad
 # Asegúrate de que estas variables de entorno estén configuradas en Render
 TOKEN_TELEGRAM = os.getenv("TOKEN_TELEGRAM")
-WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY") # Usamos la clave para weatherapi.com
+WEATHERAPI_KEY = os.getenv("API_KEY_WEATHER") # Usamos la clave para weatherapi.com
 
 LAT, LON = -32.95, -69.18  # Coordenadas exactas Potrerillos, Mendoza
 
@@ -139,8 +139,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     # 1. Verificación de seguridad antes de arrancar
-    if not all([TOKEN_TELEGRAM, API_KEY_WEATHER, WEBHOOK_URL]):
-        print("❌ ERROR CRÍTICO: Asegúrate de que las variables de entorno TOKEN_TELEGRAM, API_KEY_WEATHER y WEBHOOK_URL están configuradas.")
+    if not all([TOKEN_TELEGRAM, API_KEY_WEATHER]):
+        print("❌ ERROR CRÍTICO: Asegúrate de que las variables de entorno TOKEN_TELEGRAM, API_KEY_WEATHER y están configuradas.")
         exit(1)
 
     # 2. Crear la aplicación del bot
@@ -153,8 +153,8 @@ if __name__ == '__main__':
 
     # 4. Configurar el webhook de forma asíncrona
     async def setup():
-        print(f"Configurando webhook en la URL: {WEBHOOK_URL}/{TOKEN_TELEGRAM}")
-        await app.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN_TELEGRAM}")
+        print(f"Configurando webhook en la URL: /{TOKEN_TELEGRAM}")
+        await app.bot.set_webhook(url=f"/{TOKEN_TELEGRAM}")
 
     # Ejecutamos la configuración del webhook
     asyncio.run(setup())
@@ -164,4 +164,5 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     print(f"🏔️ Servidor Flask iniciado en el puerto {port}. El bot está escuchando vía webhook.")
     flask_app.run(host='0.0.0.0', port=port)
+
 
