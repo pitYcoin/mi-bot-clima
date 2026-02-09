@@ -3,6 +3,7 @@ import os
 import requests
 import asyncio
 from flask import Flask, request
+from threading import Thread
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -11,7 +12,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # Asegúrate de que estas variables de entorno estén configuradas en Render
 TOKEN_TELEGRAM = os.getenv("TOKEN_TELEGRAM") 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY") # Clave para OpenWeatherMap
-WEBHOOK_URL = os.getenv("WEBHOOK_URL") # URL pública de tu servidor (ej: https://tu-app.onrender.com)
 
 LAT, LON = -32.95, -69.18  # Coordenadas exactas Potrerillos, Mendoza
 
@@ -24,13 +24,6 @@ flask_app = Flask(__name__)
 @flask_app.route('/') # Esta ruta es para que Render sepa que el servicio está vivo
 def index():
     return "Bot de Emergencias Potrerillos: ACTIVO 24/7"
- 
-@flask_app.route(f'/{TOKEN_TELEGRAM}', methods=['POST'])
-async def telegram_webhook():
-    """Esta ruta recibe las actualizaciones de Telegram y las procesa."""
-    update_data = request.get_json(force=True)
-    await app.process_update(Update.de_json(update_data, app.bot))
-    return "ok", 200
 
 # --- FUNCIONES DE DATOS ---
 
@@ -127,47 +120,4 @@ async def consejos_zonda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "4. Evitar transitar bajo árboles o cables eléctricos."
     )
     await update.message.reply_text(msg, parse_mode='Markdown')
-
-# --- MANEJADOR DE MENSAJES DE TEXTO (BOTONES) ---
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text == '🏔️ Estado Actual':
-        await reporte_clima(update, context)
-    elif text == '🚨 Emergencias':
-        await emergencias(update, context)
-    elif text == '📝 Consejos Zonda':
-        await consejos_zonda(update, context)
-
-# --- INICIO DEL PROGRAMA ---
-
-if __name__ == '__main__':
-    # 1. Verificación de seguridad antes de arrancar
-    if not all([TOKEN_TELEGRAM, OPENWEATHER_API_KEY, WEBHOOK_URL]):
-        logging.critical("❌ ERROR CRÍTICO: Asegúrate de que las variables de entorno TOKEN_TELEGRAM, OPENWEATHER_API_KEY y WEBHOOK_URL están configuradas.")
-        exit(1)
-
-    # 2. Crear la aplicación del bot
-    app = Application.builder().token(TOKEN_TELEGRAM).build()
-
-    # 3. Registrar el manejador de errores (¡MUY IMPORTANTE!)
-    app.add_error_handler(error_handler)
-
-    # 4. Añadir comandos y manejadores de mensajes
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("clima", reporte_clima))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # 5. Configurar el webhook de forma asíncrona
-    async def setup():
-        print(f"Configurando webhook en la URL: {WEBHOOK_URL}/{TOKEN_TELEGRAM}")
-        await app.bot.set_webhook(url=f"{WEBHOOK_URL}/{TOKEN_TELEGRAM}")
-
-    # Ejecutamos la configuración del webhook
-    asyncio.run(setup())
-
-    # 6. Iniciar el servidor Flask
-    # Render asigna un puerto automáticamente en la variable de entorno 'PORT'
-    port = int(os.environ.get("PORT", 8080))
-    logging.info(f"🏔️ Servidor Flask iniciado en el puerto {port}. El bot está escuchando vía webhook.")
-    flask_app.run(host='0.0.0.0', port=port)
+
