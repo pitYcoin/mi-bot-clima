@@ -19,7 +19,7 @@ def run_flask():
 # --- 2. LÓGICA DEL CLIMA ---
 def obtener_clima():
     # Reemplaza 'TU_API_KEY_AQUI' por tu llave de WeatherAPI
-    API_KEY = "TU_API_KEY_DE_WEATHERAPI"
+    API_KEY = "TU_API_KEY_DE_WEATHER"
     URL = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q=-32.95,-69.18&lang=es"
     try:
         r = requests.get(URL).json()
@@ -44,11 +44,12 @@ if __name__ == '__main__':
     threading.Thread(target=run_flask).start()
     
     # Arrancar Telegram (Reemplaza 'TU_TOKEN_TELEGRAM' por el tuyo)
-    TOKEN = "TU_TOKEN_DE_TELEGRAM_AQUI"
+    TOKEN = "TOKEN_DE_TELEGRAM"
     application = Application.builder().token(TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("clima", clima_comando))
     
     print("Bot activo...")
+
     application.run_polling()
