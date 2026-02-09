@@ -104,12 +104,19 @@ async def main():
         await application.stop()
 
 if __name__ == '__main__':
-    # 1. Iniciar Flask en segundo plano
-    Thread(target=run_flask, daemon=True).start()
+    # 1. Definir el puerto de Render
+    port = int(os.environ.get("PORT", 10000))
     
-    # 2. Iniciar el Bot de Telegram
+    # 2. Iniciar Flask en un hilo separado e INMEDIATO
+    # Usamos daemon=True para que el hilo muera si el proceso principal muere
+    server = Thread(target=lambda: flask_app.run(host='0.0.0.0', port=port), daemon=True)
+    server.start()
+    logging.info(f"Servidor Flask iniciado en el puerto {port}")
+    
+    # 3. Iniciar el Bot de Telegram (esto es lo que bloquea el hilo principal)
     try:
+        logging.info("Iniciando el bot de Telegram...")
         asyncio.run(main())
     except Exception as e:
-        logger.fatal(f"El bot se detuvo: {e}")
+        logging.fatal(f"El bot se detuvo: {e}")
 
