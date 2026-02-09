@@ -19,7 +19,7 @@ def run_flask():
 # --- 2. LÓGICA DEL CLIMA ---
 def obtener_clima():
     # Reemplaza 'TU_API_KEY_AQUI' por tu llave de WeatherAPI
-    API_KEY = "TU_API_KEY_DE_WEATHER"
+    API_KEY = "API_KEY_DE_WEATHER"
     URL = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q=-32.95,-69.18&lang=es"
     try:
         r = requests.get(URL).json()
@@ -53,4 +53,5 @@ if __name__ == '__main__':
     print("Bot activo...")
 
     application.run_polling()
+
 
