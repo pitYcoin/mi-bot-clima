@@ -44,7 +44,7 @@ if __name__ == '__main__':
     threading.Thread(target=run_flask).start()
     
     # Arrancar Telegram (Reemplaza 'TU_TOKEN_TELEGRAM' por el tuyo)
-    TOKEN = "TOKEN_DE_TELEGRAM"
+    TOKEN = "TOKEN_TELEGRAM"
     application = Application.builder().token(TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
@@ -53,3 +53,4 @@ if __name__ == '__main__':
     print("Bot activo...")
 
     application.run_polling()
+
