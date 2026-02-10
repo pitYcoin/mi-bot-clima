@@ -95,13 +95,22 @@ async def main():
     while True:
         await asyncio.sleep(10)
 
+# ... (aquí arriba están tus funciones de clima, consejos y el main anterior) ...
+
 if __name__ == '__main__':
-    # Lanzar Flask en un hilo
-    Thread(target=run_flask, daemon=True).start()
+    # 1. Iniciamos el servidor web para que Render no nos corte
+    port = int(os.environ.get("PORT", 10000))
+    # Usamos un hilo (Thread) para que Flask corra sin detener al bot
+    Thread(target=lambda: flask_app.run(host='0.0.0.0', port=port), daemon=True).start()
     
-    # Lanzar el Bot
-    try:
-        asyncio.run(main())
-    except Exception as e:
-        logger.fatal(f"Error fatal: {e}")
+    # 2. PRÁCTICA TITÁNICA: El bucle infinito de vida
+    while True:
+        try:
+            logger.info("Intentando conectar con Telegram...")
+            asyncio.run(main())  # Esto lanza tu función principal del bot
+        except Exception as e:
+            # Si el bot cae por red o por GitHub, espera y revive solo
+            logger.error(f"⚠️ El sistema cayó por: {e}. Reintentando en 15 segundos...")
+            import time
+            time.sleep(15)
 
