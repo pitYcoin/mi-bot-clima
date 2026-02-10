@@ -97,20 +97,24 @@ async def main():
 
 # ... (aquí arriba están tus funciones de clima, consejos y el main anterior) ...
 
+# ... (todo tu código anterior igual) ...
+
 if __name__ == '__main__':
-    # 1. Iniciamos el servidor web para que Render no nos corte
+    # 1. Iniciamos Flask en un hilo separado
     port = int(os.environ.get("PORT", 10000))
-    # Usamos un hilo (Thread) para que Flask corra sin detener al bot
     Thread(target=lambda: flask_app.run(host='0.0.0.0', port=port), daemon=True).start()
     
-    # 2. PRÁCTICA TITÁNICA: El bucle infinito de vida
-    while True:
-        try:
-            logger.info("Intentando conectar con Telegram...")
-            asyncio.run(main())  # Esto lanza tu función principal del bot
-        except Exception as e:
-            # Si el bot cae por red o por GitHub, espera y revive solo
-            logger.error(f"⚠️ El sistema cayó por: {e}. Reintentando en 15 segundos...")
-            import time
-            time.sleep(15)
+    # 2. Ejecución simplificada del bot (más estable para Render)
+    # Reemplazamos el bucle manual por el sistema nativo de la librería
+    application = Application.builder().token(TOKEN_TELEGRAM).build()
+    
+    # (Añadir aquí todos tus handlers: start, reporte_clima, etc.)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.Text('🏔️ Estado Actual'), reporte_clima))
+    application.add_handler(MessageHandler(filters.Text('🚨 Emergencias'), emergencias))
+    application.add_handler(MessageHandler(filters.Text('📝 Consejos Zonda'), consejos_zonda))
+
+    # Iniciar polling directamente (esta función ya trae su propio bucle infinito)
+    print("🚀 Bot de Clima encendido y servidor Flask listo.")
+    application.run_polling(drop_pending_updates=True)
 
